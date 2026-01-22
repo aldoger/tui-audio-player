@@ -1,21 +1,72 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/aldoger/tui-audio-player/internal/logger"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+func dirExist(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err == nil {
+		return info.IsDir(), nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func listMusic(path string) ([]os.DirEntry, error) {
+	files, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Supported audio extensions
+	audioExt := map[string]bool{
+		".mp3":  true,
+		".wav":  true,
+		".flac": true,
+		".aac":  true,
+		".ogg":  true,
+		".m4a":  true,
+	}
+
+	var musicFiles []os.DirEntry
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		ext := strings.ToLower(filepath.Ext(file.Name()))
+		if audioExt[ext] {
+			musicFiles = append(musicFiles, file)
+		}
+	}
+
+	if len(musicFiles) < 1 {
+		return nil, errors.New("empty directory, no audio files found")
+	}
+
+	return musicFiles, nil
+}
+
 type Model struct {
-	choices  []string
+	choices  []os.DirEntry
 	cursor   int
 	selected map[int]struct{}
 }
 
-func initialModel() Model {
+func initialModel(musicFiles []os.DirEntry) Model {
 	return Model{
-		choices: []string{"Buy carrots", "Buy celery", "Buy chocolate"},
+		choices: musicFiles,
 
 		selected: make(map[int]struct{}),
 	}
@@ -28,7 +79,7 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) View() string {
 	// The header
-	s := "What should we buy at the market?\n\n"
+	s := "What music should we play?\n\n"
 
 	// Iterate over our choices
 	for i, choice := range m.choices {
@@ -46,7 +97,7 @@ func (m Model) View() string {
 		}
 
 		// Render the row
-		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice)
+		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice.Name())
 	}
 
 	// The footer
@@ -99,9 +150,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func main() {
-	p := tea.NewProgram(initialModel())
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("Alas, there's been an error: %v", err)
+
+	mylog := logger.Logger{}
+
+	Home, err := os.UserHomeDir()
+	if err != nil {
+		mylog.Error(err.Error())
 		os.Exit(1)
 	}
+
+	MusicDir := Home + "/Music"
+
+	result, err := dirExist(MusicDir)
+	if err != nil {
+		mylog.Error(err.Error())
+		os.Exit(1)
+	}
+
+	if !result {
+		mylog.Error("directory %s does not exist", MusicDir)
+		os.Exit(1)
+	}
+
+	musicFiles, err := listMusic(MusicDir)
+	if err != nil {
+		mylog.Error(err.Error())
+		os.Exit(1)
+	}
+
+	p := tea.NewProgram(initialModel(musicFiles))
+	if _, err := p.Run(); err != nil {
+		mylog.Error("Error: %s", err.Error())
+		os.Exit(1)
+	}
+
 }
