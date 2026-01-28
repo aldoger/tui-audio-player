@@ -1,10 +1,12 @@
-package logger
+package main
 
 import (
 	c "github.com/fatih/color"
 )
 
 type Logger struct{}
+
+var MyLogger = Logger{}
 
 func (l *Logger) Info(msg string, a ...any) {
 	c.Blue(msg, a...)
